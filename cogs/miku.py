@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import random
 import re
@@ -10,7 +11,7 @@ from discord.ext import commands
 import db
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "llama-3.1-8b-instant"
 TRIGGER = re.compile(r"\bmiku\b", re.IGNORECASE)
 TEXT_CALL = re.compile(r"<function=(\w+)\s*>?\s*(\{.*?\})?", re.DOTALL)
 CLEAN_FULL = re.compile(r"<function=\w+[\s>]*\{.*?\}[\s>]*(?:</function>)?", re.DOTALL)
@@ -76,6 +77,8 @@ class Miku(commands.Cog):
         async with aiohttp.ClientSession() as s:
             async with s.post(GROQ_URL, headers=headers, json=payload) as r:
                 data = await r.json()
+        if "choices" not in data:
+            raise RuntimeError(data.get("error", {}).get("message", str(data)))
         return data["choices"][0]["message"]
 
     def text_calls(self, content):
@@ -201,6 +204,7 @@ class Miku(commands.Cog):
                     m = await self.groq(msgs)
                 reply = self.clean(m.get("content")) or "🎵"
             except Exception:
+                logging.exception("miku on_message fallito")
                 reply = "Ehm, mi si è inceppata la voce 🎵 riprova tra un po'~"
         db.add_history(cid, "user", user_msg)
         db.add_history(cid, "assistant", reply)
