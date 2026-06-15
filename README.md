@@ -1,40 +1,77 @@
 # Discord Server Bot
 
-Bot per setup e gestione di un server Discord: crea struttura (categorie, canali con emoji, ruoli), reaction roles, messaggio di benvenuto e comandi utility.
+Bot Discord per un server privato tra amici. Slash command, cog modulari, SQLite. Tono italiano scherzoso.
 
-## Comandi
+## Comandi (slash `/`)
 
-| Comando | Cosa fa |
-|---------|---------|
-| `!setup` | Crea categorie, canali (con emoji), ruoli base, reaction roles e welcome |
-| `!makeroles` | Crea un pack di ruoli colorati |
-| `!say #canale testo` | Posta un messaggio come il bot |
-| `!embed #canale "titolo" testo` | Posta un embed |
-| `!backup` | Salva la struttura del server in JSON |
-| `!nuke confirm` | ⚠️ Cancella tutti i canali e ruoli (irreversibile) |
+**🎵 Musica** (serve ffmpeg sull'host)
+- `/play <brano>` — nome o link YouTube
+- `/skip` `/stop` `/queue` `/leave`
 
-Tutti i comandi richiedono permessi da amministratore.
+**📊 XP**
+- `/rank` — i tuoi punti
+- `/top` — classifica
+
+**🎲 Fun**
+- `/poll <domanda> [opzioni]` `/roll <NdM>` `/scegli <opzioni>` `/8ball <domanda>`
+- `/meme` `/trivia` `/tris <avversario>`
+
+**🛡️ Moderazione** (richiede permessi adeguati)
+- `/kick` `/ban` `/unban` `/mute <durata>` `/unmute`
+- `/warn` `/warnings` `/purge <n>`
+- Automod automatico: spam, invite link, parole vietate, anti-raid → log nel canale con "log" nel nome
+
+## Struttura
+
+```
+bot.py          entrypoint, carica i cog e sincronizza gli slash
+db.py           SQLite (xp, warns)
+cogs/
+  music.py      yt-dlp + ffmpeg
+  xp.py         XP per messaggi + classifica
+  mod.py        moderazione completa + automod
+  fun.py        giochi e utility
+```
 
 ## Setup
 
-1. Crea l'app e il bot su https://discord.com/developers/applications
-2. Attiva i 3 **Privileged Gateway Intents** (Presence, Server Members, Message Content)
-3. Invita il bot con scope `bot` e permesso Administrator
-4. Configura il token:
+1. App + bot su https://discord.com/developers/applications
+2. Attiva i 3 **Privileged Gateway Intents**
+3. Invita con scope `bot` + `applications.commands`, permesso Administrator
+4. Configura ed esegui:
 
 ```bash
-cp .env.example .env
-# incolla il token in .env
-```
-
-5. Installa e avvia:
-
-```bash
+cp .env.example .env          # incolla il token
 python -m venv venv
 ./venv/bin/pip install -r requirements.txt
+sudo apt install ffmpeg       # o equivalente, serve per la musica
 ./venv/bin/python bot.py
+```
+
+Gli slash command vengono sincronizzati al primo avvio su ogni server.
+
+## Servizio systemd (host sempre acceso)
+
+```ini
+# /etc/systemd/system/discordbot.service
+[Unit]
+Description=Discord Bot
+After=network.target
+
+[Service]
+WorkingDirectory=/home/pi/discord-bot
+ExecStart=/home/pi/discord-bot/venv/bin/python bot.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now discordbot
 ```
 
 ## Note
 
-`.env` (token) e `config.json` sono esclusi da git. Non committare mai il token.
+- `BADWORDS` in `cogs/mod.py` è un placeholder: metti le parole che vuoi filtrare.
+- `.env`, `data.db`, `config.json` esclusi da git. **Mai committare il token.**

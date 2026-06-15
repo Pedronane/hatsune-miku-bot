@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 config.json
 backup_*.json
+data.db
