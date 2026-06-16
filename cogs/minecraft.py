@@ -2,7 +2,6 @@ import asyncio
 import json
 import os
 import re
-import threading
 
 import discord
 from discord import app_commands
@@ -137,12 +136,12 @@ class Minecraft(commands.Cog):
         return ids
 
     def _collect_blocks(self, blocks):
-        ev = threading.Event()
-        res = {}
         self.world.pathfinder.setMovements(self.movements)
-        self.world.collectBlock.collect(blocks, {"ignoreNoPath": True}, lambda err=None, *a: (res.update(err=err), ev.set()))
-        ev.wait(180)
-        return res.get("err")
+        try:
+            self.world.collectBlock.collect(blocks, {"ignoreNoPath": True})
+        except Exception as e:
+            return str(e)
+        return None
 
     def _collect(self, what="legna", count=1):
         ids = self._block_ids(what)
