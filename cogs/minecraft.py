@@ -233,21 +233,39 @@ class Minecraft(commands.Cog):
         bid = self.world.registry.blocksByName["crafting_table"].id
         return self.world.findBlock({"matching": bid, "maxDistance": 4})
 
+    def _relocate_open(self):
+        pos = self.world.entity.position
+        for dx, dz in ((3, 0), (0, 3), (-3, 0), (0, -3), (3, 3), (-3, -3)):
+            t = pos.offset(dx, 0, dz)
+            foot = self.world.blockAt(t)
+            below = self.world.blockAt(t.offset(0, -1, 0))
+            if foot and str(foot.name) == "air" and below and str(below.name) != "air":
+                self.world.pathfinder.setMovements(self.movements)
+                try:
+                    self.world.pathfinder.goto(self.pf.goals.GoalBlock(t.x, t.y, t.z), timeout=40)
+                except Exception:
+                    pass
+                return True
+        return False
+
     def _place_table(self):
         item = self._find_inv_item("crafting_table", exact=True)
         if item is None:
             return False
         self.world.equip(item, "hand", timeout=20)
-        pos = self.world.entity.position
-        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            base = self.world.blockAt(pos.offset(dx, -1, dz))
-            space = self.world.blockAt(pos.offset(dx, 0, dz))
-            if base and str(base.name) != "air" and space and str(space.name) == "air":
-                try:
-                    self.world.placeBlock(base, self.vec3(0, 1, 0), timeout=30)
-                    return True
-                except Exception:
-                    continue
+        for attempt in range(4):
+            pos = self.world.entity.position
+            for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                base = self.world.blockAt(pos.offset(dx, -1, dz))
+                space = self.world.blockAt(pos.offset(dx, 0, dz))
+                if base and str(base.name) != "air" and space and str(space.name) == "air":
+                    try:
+                        self.world.placeBlock(base, self.vec3(0, 1, 0), timeout=30)
+                        return True
+                    except Exception:
+                        continue
+            if not self._relocate_open():
+                break
         return False
 
     def _ensure_table(self):
