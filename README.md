@@ -21,6 +21,13 @@ Bot Discord per un server privato tra amici. Slash command, cog modulari, SQLite
 - `/warn` `/warnings` `/purge <n>`
 - Automod automatico: spam, invite link, parole vietate, anti-raid → log nel canale con "log" nel nome
 
+**⛏️ Minecraft** (server in offline-mode + Node sull'host)
+- `/mc connect` `/mc disconnect` `/mc status`
+- `/mc say <testo>` — scrive in chat MC
+- `/mc goto <x> <y> <z>` `/mc come <giocatore>` `/mc follow <giocatore>` `/mc stop`
+- `/mc ask <frase>` — linguaggio naturale → azioni (persona "Miku", LLM Groq free-tier)
+- Ponte chat: in-game ↔ canale Discord (`MC_RELAY_CHANNEL_ID`)
+
 ## Struttura
 
 ```
@@ -31,6 +38,7 @@ cogs/
   xp.py         XP per messaggi + classifica
   mod.py        moderazione completa + automod
   fun.py        giochi e utility
+  minecraft.py  bot Minecraft (mineflayer via JSPyBridge) + ponte chat + LLM Groq
 ```
 
 ## Setup
@@ -44,9 +52,12 @@ cogs/
 cp .env.example .env          # incolla il token
 python -m venv venv
 ./venv/bin/pip install -r requirements.txt
-sudo apt install ffmpeg       # o equivalente, serve per la musica
+sudo apt install ffmpeg nodejs npm   # ffmpeg=musica, node=cog Minecraft
+npm install mineflayer mineflayer-pathfinder
 ./venv/bin/python bot.py
 ```
+
+Per il cog Minecraft, in `.env`: `MC_HOST`, `MC_PORT`, `MC_USERNAME`, `MC_RELAY_CHANNEL_ID` e `GROQ_API_KEY` (gratis su console.groq.com). Server MC in **offline-mode**.
 
 Gli slash command vengono sincronizzati al primo avvio su ogni server.
 

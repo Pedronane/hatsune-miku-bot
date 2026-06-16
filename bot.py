@@ -9,7 +9,7 @@ import db
 load_dotenv()
 TOKEN = os.environ["DISCORD_TOKEN"]
 
-COGS = ["cogs.music", "cogs.xp", "cogs.mod", "cogs.fun", "cogs.miku"]
+COGS = ["cogs.music", "cogs.xp", "cogs.mod", "cogs.fun", "cogs.miku", "cogs.minecraft"]
 
 intents = discord.Intents.default()
 intents.members = True

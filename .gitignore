@@ -5,3 +5,4 @@ __pycache__/
 config.json
 backup_*.json
 data.db
+node_modules/

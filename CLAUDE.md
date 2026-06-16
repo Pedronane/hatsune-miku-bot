@@ -7,8 +7,10 @@ Bot Discord per un server privato di **10 amici IRL** (soli uomini, nessun tema 
 - **discord.py** 2.x (Python 3.14), slash commands (`app_commands`)
 - **SQLite** per persistenza (XP, config, moderazione) — file locale, no server DB
 - **yt-dlp + ffmpeg** per musica da YouTube
+- **mineflayer** (via pacchetto Python `javascript`/JSPyBridge → Node) per il bot Minecraft
+- **Groq** (`AsyncGroq`, free-tier) per `/mc ask` linguaggio naturale → tool calling
 - Hosting target: **Raspberry/hardware dedicato sempre acceso** (systemd service)
-- Segreti in `.env` (`DISCORD_TOKEN`), caricati con python-dotenv
+- Segreti in `.env` (`DISCORD_TOKEN`, `MC_*`, `GROQ_API_KEY`), caricati con python-dotenv
 
 ## Architettura
 
@@ -20,6 +22,7 @@ Cogs separati, un file per modulo in `cogs/`:
 | `xp.py` | XP per messaggi, comando `/top` (classifica). **Nessun ruolo automatico** |
 | `mod.py` | Moderazione **completa**: kick/ban/mute, automod (spam/link/parolacce), warn system, mute temporanei, anti-raid, log azioni |
 | `fun.py` | `/poll`, `/roll`, `/scegli`, `8ball`, meme/gif, mini-giochi (trivia, impiccato, tris) |
+| `minecraft.py` | gruppo `/mc` (connect/say/goto/come/follow/stop/ask). mineflayer+pathfinder dentro Python (JSPyBridge). Ponte chat MC↔Discord. `/mc ask` = Groq tool-calling. **Callback mineflayer girano su thread bridge → marshalling a discord con `run_coroutine_threadsafe`**. Server MC in offline-mode |
 
 `bot.py` = entrypoint: carica i cog, gestisce intents e sync degli slash command.
 

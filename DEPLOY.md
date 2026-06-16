@@ -5,8 +5,10 @@ Guida per far girare il bot 24/7 sul Raspberry. Eseguire tutti i comandi via SSH
 ## 1. Dipendenze di sistema
 
 ```bash
-sudo apt update && sudo apt install -y git python3-venv ffmpeg
+sudo apt update && sudo apt install -y git python3-venv ffmpeg nodejs npm
 ```
+
+> `nodejs`/`npm` servono al cog Minecraft: mineflayer gira via il pacchetto Python `javascript` (JSPyBridge), che spawna Node.
 
 ## 2. Clona e installa
 
@@ -16,6 +18,7 @@ git clone https://github.com/Pedronane/discord-server-bot.git
 cd discord-server-bot
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
+npm install mineflayer mineflayer-pathfinder
 ```
 
 > Se PyNaCl prova a compilare e fallisce (ARM 32-bit):
@@ -27,6 +30,8 @@ python3 -m venv venv
 cp .env.example .env
 nano .env          # incolla DISCORD_TOKEN, poi Ctrl+O Invio Ctrl+X
 ```
+
+Per il bot Minecraft compila anche: `MC_HOST`, `MC_PORT`, `MC_USERNAME`, `MC_RELAY_CHANNEL_ID` (id del canale Discord per il ponte chat) e `GROQ_API_KEY` (gratis su console.groq.com, per `/mc ask`). Il server Minecraft deve essere in **offline-mode**.
 
 ## 4. Test manuale
 
