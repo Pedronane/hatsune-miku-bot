@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 
 import discord
 from discord import app_commands
@@ -11,8 +12,9 @@ PERSONA = (
     "Strumenti: goto (vai a coordinate x y z), come (raggiungi un giocatore), "
     "follow (segui un giocatore), stop (fermati), say (parla in chat). "
     "Se ti chiedono un'azione nel gioco usa SEMPRE lo strumento giusto. "
-    "I nomi dei giocatori sono username esatti. Se dicono 'vieni da me', 'seguimi' o "
-    "'raggiungimi' senza un nome, usa chi sta parlando. "
+    "I nomi dei giocatori sono username esatti. Se dicono 'vieni da me' o "
+    "'raggiungimi' senza un nome usa come; se dicono 'seguimi' usa follow; col tuo giocatore. "
+    "Quando rispondi a parole scrivi solo testo semplice, niente tag, virgolette o parentesi. "
     "Parli italiano, frasi corte e ironiche."
 )
 
@@ -26,10 +28,10 @@ TOOLS = [
             "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}},
             "required": ["x", "y", "z"]}}},
     {"type": "function", "function": {
-        "name": "come", "description": "Raggiungi un giocatore una volta",
+        "name": "come", "description": "Raggiungi un giocatore una volta sola (vieni qui, raggiungimi)",
         "parameters": {"type": "object", "properties": {"player": {"type": "string"}}, "required": ["player"]}}},
     {"type": "function", "function": {
-        "name": "follow", "description": "Segui un giocatore in continuazione",
+        "name": "follow", "description": "Segui di continuo un giocatore che si muove (seguimi, stammi dietro)",
         "parameters": {"type": "object", "properties": {"player": {"type": "string"}}, "required": ["player"]}}},
     {"type": "function", "function": {
         "name": "stop", "description": "Fermati, smetti di muoverti",
@@ -234,10 +236,17 @@ class Minecraft(commands.Cog):
                 args["player"] = who
             done.append(self._dispatch(tc.function.name, args))
         if msg.content:
-            done.append(msg.content)
+            done.append(self._clean(msg.content))
         reply = " ".join(p for p in done if p) or "boh non ho capito"
         self.world.chat(reply[:240])
         return reply
+
+    def _clean(self, t):
+        t = re.sub(r"</?[a-zA-Z]+>", "", t).strip()
+        m = re.fullmatch(r'\{\s*"?(.*?)"?\s*\}', t, re.S)
+        if m:
+            t = m.group(1)
+        return t.strip().strip('"')
 
     def _dispatch(self, name, args):
         if name == "say":
