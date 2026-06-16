@@ -22,7 +22,7 @@ Cogs separati, un file per modulo in `cogs/`:
 | `xp.py` | XP per messaggi, comando `/top` (classifica). **Nessun ruolo automatico** |
 | `mod.py` | Moderazione **completa**: kick/ban/mute, automod (spam/link/parolacce), warn system, mute temporanei, anti-raid, log azioni |
 | `fun.py` | `/poll`, `/roll`, `/scegli`, `8ball`, meme/gif, mini-giochi (trivia, impiccato, tris) |
-| `minecraft.py` | gruppo `/mc` (connect/say/goto/come/follow/stop/ask). mineflayer+pathfinder dentro Python (JSPyBridge). Ponte chat MC↔Discord. `/mc ask` = Groq tool-calling. **Callback mineflayer girano su thread bridge → marshalling a discord con `run_coroutine_threadsafe`**. Server MC in offline-mode |
+| `minecraft.py` | bot Minecraft quasi-autonomo. `/mc` (connect/say/goto/come/follow/stop/collect/craft/ask) + chat in-game "miku ...". mineflayer+plugin dentro Python (JSPyBridge). Skill deterministiche (collect legna, craft da zero→piccone) + LLM router Groq. **Vedi `docs/BOT_MINECRAFT.md` per architettura, stato step-by-step e gotcha (versione≤1.21.8, timeout JSPyBridge, deploy package.json).** |
 
 `bot.py` = entrypoint: carica i cog, gestisce intents e sync degli slash command.
 
