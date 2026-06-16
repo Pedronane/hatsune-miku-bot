@@ -246,6 +246,7 @@ class Minecraft(commands.Cog):
         m = re.fullmatch(r'\{\s*"?(.*?)"?\s*\}', t, re.S)
         if m:
             t = m.group(1)
+        t = re.sub(r'^\s*"?\w+"?\s*:\s*"?', "", t)
         return t.strip().strip('"')
 
     def _dispatch(self, name, args):
