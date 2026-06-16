@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import threading
 
 import discord
 from discord import app_commands
@@ -122,6 +123,41 @@ class Minecraft(commands.Cog):
             self.world = None
             self._push(self._relay("🔴 Disconnessa da Minecraft"))
 
+    def _block_ids(self, what):
+        w = what.lower().strip()
+        logs = {"legna", "legno", "wood", "tronco", "tronchi", "log", "logs"}
+        ids = []
+        for b in self.world.registry.blocksArray:
+            n = str(b.name)
+            if w in logs:
+                if n.endswith("_log"):
+                    ids.append(b.id)
+            elif w in n:
+                ids.append(b.id)
+        return ids
+
+    def _collect_blocks(self, blocks):
+        ev = threading.Event()
+        res = {}
+        self.world.pathfinder.setMovements(self.movements)
+        self.world.collectBlock.collect(blocks, {"ignoreNoPath": True}, lambda err=None, *a: (res.update(err=err), ev.set()))
+        ev.wait(180)
+        return res.get("err")
+
+    def _collect(self, what="legna", count=1):
+        ids = self._block_ids(what)
+        if not ids:
+            return f"non so cosa sia '{what}'"
+        for dist in (48, 96, 160):
+            found = self.world.findBlocks({"matching": ids, "maxDistance": dist, "count": count})
+            blocks = [self.world.blockAt(p) for p in found]
+            if blocks:
+                err = self._collect_blocks(blocks)
+                if err:
+                    return f"problema raccogliendo {what}: {str(err)[:80]}"
+                return f"raccolti {len(blocks)} {what}"
+        return f"non trovo {what} qui intorno"
+
     def _goto(self, x, y, z):
         self.world.pathfinder.setMovements(self.movements)
         self.world.pathfinder.setGoal(self.pf.goals.GoalNear(x, y, z, 1))
@@ -214,6 +250,15 @@ class Minecraft(commands.Cog):
             return
         self._stop()
         await interaction.response.send_message("✋ Fermo qui.")
+
+    @mc.command(description="Raccogli blocchi (es. legna)")
+    async def collect(self, interaction: discord.Interaction, cosa: str = "legna", quanti: int = 1):
+        if not self.world:
+            await interaction.response.send_message("Non sono connessa.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        out = await asyncio.to_thread(self._collect, cosa, quanti)
+        await interaction.followup.send(f"🪓 {out}")
 
     @mc.command(description="Chiedi a Miku in linguaggio naturale")
     async def ask(self, interaction: discord.Interaction, richiesta: str):
