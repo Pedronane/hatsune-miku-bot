@@ -135,10 +135,10 @@ class Minecraft(commands.Cog):
                 ids.append(b.id)
         return ids
 
-    def _collect_blocks(self, blocks):
+    def _collect_one(self, block):
         self.world.pathfinder.setMovements(self.movements)
         try:
-            self.world.collectBlock.collect(blocks, {"ignoreNoPath": True})
+            self.world.collectBlock.collect(block, {"ignoreNoPath": True})
         except Exception as e:
             return str(e)
         return None
@@ -147,14 +147,22 @@ class Minecraft(commands.Cog):
         ids = self._block_ids(what)
         if not ids:
             return f"non so cosa sia '{what}'"
+        got = 0
         for dist in (48, 96, 160):
             found = self.world.findBlocks({"matching": ids, "maxDistance": dist, "count": count})
-            blocks = [self.world.blockAt(p) for p in found]
-            if blocks:
-                err = self._collect_blocks(blocks)
+            n = int(found.length)
+            for i in range(n):
+                blk = self.world.blockAt(found[i])
+                if blk is None:
+                    continue
+                err = self._collect_one(blk)
                 if err:
-                    return f"problema raccogliendo {what}: {str(err)[:80]}"
-                return f"raccolti {len(blocks)} {what}"
+                    return f"problema con {what}: {err[:80]}"
+                got += 1
+                if got >= count:
+                    return f"raccolti {got} {what}"
+            if got:
+                return f"raccolti {got} {what}"
         return f"non trovo {what} qui intorno"
 
     def _goto(self, x, y, z):
