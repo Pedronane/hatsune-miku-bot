@@ -138,7 +138,7 @@ class Minecraft(commands.Cog):
     def _collect_one(self, block):
         self.world.pathfinder.setMovements(self.movements)
         try:
-            self.world.collectBlock.collect(block, {"ignoreNoPath": True})
+            self.world.collectBlock.collect(block, {"ignoreNoPath": True}, timeout=300)
         except Exception as e:
             return str(e)
         return None
