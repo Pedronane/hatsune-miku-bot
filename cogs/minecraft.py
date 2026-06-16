@@ -74,6 +74,11 @@ class Minecraft(commands.Cog):
             from javascript import require
             self.lib = require("mineflayer")
             self.pf = require("mineflayer-pathfinder")
+            self.collectblock = require("mineflayer-collectblock")
+            self.tool = require("mineflayer-tool")
+            self.pvp = require("mineflayer-pvp")
+            self.armor = require("mineflayer-armor-manager")
+            self.autoeat = require("mineflayer-auto-eat")
 
     def _connect(self):
         from javascript import On
@@ -83,6 +88,11 @@ class Minecraft(commands.Cog):
             "username": self.username, "auth": "offline", "version": self.version,
         })
         self.world.loadPlugin(self.pf.pathfinder)
+        self.world.loadPlugin(self.collectblock.plugin)
+        self.world.loadPlugin(self.tool.plugin)
+        self.world.loadPlugin(self.pvp.plugin)
+        self.world.loadPlugin(self.armor)
+        self.world.loadPlugin(self.autoeat.loader)
 
         @On(self.world, "spawn")
         def _spawn(this):

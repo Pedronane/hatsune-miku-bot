@@ -18,7 +18,7 @@ git clone https://github.com/Pedronane/discord-server-bot.git
 cd discord-server-bot
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
-npm install mineflayer mineflayer-pathfinder
+npm install mineflayer mineflayer-pathfinder mineflayer-collectblock mineflayer-tool mineflayer-pvp mineflayer-armor-manager mineflayer-auto-eat
 ```
 
 > Se PyNaCl prova a compilare e fallisce (ARM 32-bit):

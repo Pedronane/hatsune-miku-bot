@@ -53,7 +53,7 @@ cp .env.example .env          # incolla il token
 python -m venv venv
 ./venv/bin/pip install -r requirements.txt
 sudo apt install ffmpeg nodejs npm   # ffmpeg=musica, node=cog Minecraft
-npm install mineflayer mineflayer-pathfinder
+npm install mineflayer mineflayer-pathfinder mineflayer-collectblock mineflayer-tool mineflayer-pvp mineflayer-armor-manager mineflayer-auto-eat
 ./venv/bin/python bot.py
 ```
 
