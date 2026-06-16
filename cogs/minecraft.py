@@ -79,6 +79,7 @@ class Minecraft(commands.Cog):
             self.pvp = require("mineflayer-pvp")
             self.armor = require("mineflayer-armor-manager")
             self.autoeat = require("mineflayer-auto-eat")
+            self.vec3 = require("vec3")
 
     def _connect(self):
         from javascript import On
@@ -164,6 +165,113 @@ class Minecraft(commands.Cog):
             if got:
                 return f"raccolti {got} {what}"
         return f"non trovo {what} qui intorno"
+
+    def _inv(self):
+        return self.world.inventory.items()
+
+    def _count_suffix(self, suffix, exact=False):
+        tot = 0
+        for it in self._inv():
+            n = str(it.name)
+            if (n == suffix) if exact else n.endswith(suffix):
+                tot += it.count
+        return tot
+
+    def _find_inv_item(self, suffix, exact=False):
+        for it in self._inv():
+            n = str(it.name)
+            if (n == suffix) if exact else n.endswith(suffix):
+                return it
+        return None
+
+    def _names_with(self, suffix):
+        return [str(it.name) for it in self.world.registry.itemsArray if str(it.name).endswith(suffix)]
+
+    def _item_id(self, name):
+        o = self.world.registry.itemsByName[name]
+        return o.id if o else None
+
+    def _craft_one(self, item_name, table=None):
+        iid = self._item_id(item_name)
+        if iid is None:
+            return False
+        recs = self.world.recipesFor(iid, None, 1, table)
+        if int(recs.length) == 0:
+            return False
+        self.world.craft(recs[0], 1, table, timeout=60)
+        return True
+
+    def _craft_any(self, suffix):
+        for name in self._names_with(suffix):
+            if self._craft_one(name):
+                return True
+        return False
+
+    def _ensure_planks(self, n):
+        for _ in range(30):
+            if self._count_suffix("_planks") >= n:
+                return True
+            if self._count_suffix("_log") < 1:
+                self._collect("legna", 1)
+                if self._count_suffix("_log") < 1:
+                    return False
+            if not self._craft_any("_planks"):
+                return False
+        return self._count_suffix("_planks") >= n
+
+    def _ensure_sticks(self, n):
+        for _ in range(30):
+            if self._count_suffix("stick", exact=True) >= n:
+                return True
+            if self._count_suffix("_planks") < 2 and not self._ensure_planks(2):
+                return False
+            if not self._craft_one("stick"):
+                return False
+        return self._count_suffix("stick", exact=True) >= n
+
+    def _table_block(self):
+        bid = self.world.registry.blocksByName["crafting_table"].id
+        return self.world.findBlock({"matching": bid, "maxDistance": 4})
+
+    def _place_table(self):
+        item = self._find_inv_item("crafting_table", exact=True)
+        if item is None:
+            return False
+        self.world.equip(item, "hand", timeout=20)
+        pos = self.world.entity.position
+        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            base = self.world.blockAt(pos.offset(dx, -1, dz))
+            space = self.world.blockAt(pos.offset(dx, 0, dz))
+            if base and str(base.name) != "air" and space and str(space.name) == "air":
+                try:
+                    self.world.placeBlock(base, self.vec3(0, 1, 0), timeout=30)
+                    return True
+                except Exception:
+                    continue
+        return False
+
+    def _ensure_table(self):
+        b = self._table_block()
+        if b:
+            return b
+        if self._find_inv_item("crafting_table", exact=True) is None:
+            if not self._ensure_planks(4) or not self._craft_one("crafting_table"):
+                return None
+        if not self._place_table():
+            return None
+        return self._table_block()
+
+    def _make_pickaxe(self):
+        table = self._ensure_table()
+        if table is None:
+            return "non riesco a piazzare il tavolo"
+        if not self._ensure_sticks(2):
+            return "non riesco a fare i bastoni"
+        if not self._ensure_planks(3):
+            return "non riesco a fare le assi"
+        if not self._craft_one("wooden_pickaxe", table):
+            return "non riesco a craftare il piccone"
+        return "piccone di legno pronto!"
 
     def _goto(self, x, y, z):
         self.world.pathfinder.setMovements(self.movements)
@@ -266,6 +374,15 @@ class Minecraft(commands.Cog):
         await interaction.response.defer()
         out = await asyncio.to_thread(self._collect, cosa, quanti)
         await interaction.followup.send(f"🪓 {out}")
+
+    @mc.command(description="Fabbrica da zero (per ora: piccone di legno)")
+    async def craft(self, interaction: discord.Interaction, oggetto: str = "piccone"):
+        if not self.world:
+            await interaction.response.send_message("Non sono connessa.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        out = await asyncio.to_thread(self._make_pickaxe)
+        await interaction.followup.send(f"🛠️ {out}")
 
     @mc.command(description="Chiedi a Miku in linguaggio naturale")
     async def ask(self, interaction: discord.Interaction, richiesta: str):
