@@ -7,10 +7,13 @@ from discord import app_commands
 from discord.ext import commands
 
 PERSONA = (
-    "Sei Miku, un bot che controlla un personaggio dentro Minecraft per un gruppo di amici. "
-    "Parli italiano slang e ironico, frasi corte. Quando ti chiedono di fare qualcosa nel gioco "
-    "(muoverti, seguire, raggiungere, fermarti, dire qualcosa in chat) usa i tool. "
-    "Se è solo chiacchiera rispondi a parole, breve."
+    "Sei Hatsune Miku, controlli un bot dentro Minecraft per un gruppo di amici. "
+    "Strumenti: goto (vai a coordinate x y z), come (raggiungi un giocatore), "
+    "follow (segui un giocatore), stop (fermati), say (parla in chat). "
+    "Se ti chiedono un'azione nel gioco usa SEMPRE lo strumento giusto. "
+    "I nomi dei giocatori sono username esatti. Se dicono 'vieni da me', 'seguimi' o "
+    "'raggiungimi' senza un nome, usa chi sta parlando. "
+    "Parli italiano, frasi corte e ironiche."
 )
 
 TOOLS = [
@@ -86,8 +89,13 @@ class Minecraft(commands.Cog):
 
         @On(self.world, "chat")
         def _chat(this, sender, message, *a):
-            if sender and sender != self.username:
-                self._push(self._relay(f"💬 **{sender}**: {message}"))
+            if not sender or sender == self.username:
+                return
+            self._push(self._relay(f"💬 **{sender}**: {message}"))
+            if self.groq and message.lower().startswith("miku"):
+                req = message[4:].strip(" ,:!")
+                if req:
+                    self._push(self._think(req, sender))
 
         @On(self.world, "death")
         def _death(this):
@@ -207,26 +215,33 @@ class Minecraft(commands.Cog):
         out = await self._think(richiesta)
         await interaction.followup.send(out)
 
-    async def _think(self, prompt):
-        resp = await self.groq.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": PERSONA}, {"role": "user", "content": prompt}],
-            tools=TOOLS, tool_choice="auto",
-        )
+    async def _think(self, prompt, who=None):
+        ctx = prompt if not who else f"[{who} dice] {prompt}"
+        try:
+            resp = await self.groq.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "system", "content": PERSONA}, {"role": "user", "content": ctx}],
+                tools=TOOLS, tool_choice="auto", temperature=0,
+            )
+        except Exception as e:
+            self.world.chat("mi sa che groq è morto")
+            return f"Errore LLM: {e}"
         msg = resp.choices[0].message
         done = []
         for tc in msg.tool_calls or []:
             args = json.loads(tc.function.arguments or "{}")
+            if who and tc.function.name in ("come", "follow") and not args.get("player"):
+                args["player"] = who
             done.append(self._dispatch(tc.function.name, args))
         if msg.content:
-            self.world.chat(msg.content)
-            done.append(f"💬 {msg.content}")
-        return "\n".join(done) or "Non ho capito cosa fare."
+            done.append(msg.content)
+        reply = " ".join(p for p in done if p) or "boh non ho capito"
+        self.world.chat(reply[:240])
+        return reply
 
     def _dispatch(self, name, args):
         if name == "say":
-            self.world.chat(args["text"])
-            return f"📣 `{args['text']}`"
+            return args["text"]
         if name == "goto":
             self._goto(args["x"], args["y"], args["z"])
             return f"🚶 Vado a `{args['x']} {args['y']} {args['z']}`"
