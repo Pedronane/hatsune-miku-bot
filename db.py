@@ -111,3 +111,9 @@ def get_facts(guild_id, limit=40):
             "SELECT fact FROM miku_facts WHERE guild_id = ? ORDER BY id DESC LIMIT ?",
             (guild_id, limit),
         ).fetchall()
+
+
+def clear_facts(guild_id):
+    with conn() as c:
+        cur = c.execute("DELETE FROM miku_facts WHERE guild_id = ?", (guild_id,))
+        return cur.rowcount

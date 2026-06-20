@@ -61,6 +61,9 @@ WorkingDirectory=/home/pi/discord-server-bot
 ExecStart=/home/pi/discord-server-bot/venv/bin/python bot.py
 Restart=always
 RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -86,6 +89,36 @@ sudo systemctl restart discordbot
 # aggiorna all'ultima versione del repo
 cd ~/discord-server-bot && git pull && sudo systemctl restart discordbot
 ```
+
+## Manutenzione yt-dlp (importante)
+
+YouTube cambia spesso e yt-dlp si rompe: tieni un timer che lo aggiorna ogni notte.
+
+```bash
+sudo tee /etc/systemd/system/ytdlp-update.service >/dev/null <<'EOF'
+[Unit]
+Description=Aggiorna yt-dlp
+[Service]
+Type=oneshot
+ExecStart=/home/pi/discord-server-bot/venv/bin/pip install -U --quiet yt-dlp
+ExecStartPost=/bin/systemctl restart discordbot
+EOF
+
+sudo tee /etc/systemd/system/ytdlp-update.timer >/dev/null <<'EOF'
+[Unit]
+Description=Aggiorna yt-dlp ogni notte
+[Timer]
+OnCalendar=*-*-* 05:00:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+
+sudo systemctl daemon-reload && sudo systemctl enable --now ytdlp-update.timer
+```
+
+> Su Python ≥3.13 (Pi recente) il modulo `audioop` non esiste più: `requirements.txt`
+> installa `audioop-lts`, indispensabile o la musica non parte.
 
 ## Checklist prima dell'avvio
 

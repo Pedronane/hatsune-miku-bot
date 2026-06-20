@@ -49,6 +49,10 @@ class Minecraft(commands.Cog):
         self.username = os.environ.get("MC_USERNAME", "Miku")
         self.version = os.environ.get("MC_VERSION") or False
         self.relay_id = int(os.environ.get("MC_RELAY_CHANNEL_ID", "0"))
+        # Trigger LLM da chat IN-GAME: OFF di default. Il server è offline-mode,
+        # chiunque può entrare con qualsiasi nome e pilotare il bot → tienilo spento.
+        # /mc ask da Discord resta sempre attivo (lì gli utenti sono autenticati).
+        self.ingame_llm = os.environ.get("MC_INGAME_LLM", "").lower() in ("1", "true", "yes", "on")
         self.lib = None
         self.pf = None
         self.world = None
@@ -67,7 +71,16 @@ class Minecraft(commands.Cog):
         if self.relay_id:
             ch = self.bot.get_channel(self.relay_id)
             if ch:
-                await ch.send(text)
+                await ch.send(text[:2000], allowed_mentions=discord.AllowedMentions.none())
+
+    def _safe_chat(self, text):
+        # Mai mandare comandi di gioco: una stringa che inizia con "/" verrebbe
+        # eseguita come comando Minecraft (es. /op, /kill). Neutralizza il prefisso.
+        text = str(text).strip()
+        if text.startswith("/"):
+            text = "​" + text
+        if self.world:
+            self.world.chat(text[:240])
 
     def _require(self):
         if self.lib is None:
@@ -105,7 +118,7 @@ class Minecraft(commands.Cog):
             if not sender or sender == self.username:
                 return
             self._push(self._relay(f"💬 **{sender}**: {message}"))
-            if self.groq and message.lower().startswith("miku"):
+            if self.ingame_llm and self.groq and message.lower().startswith("miku"):
                 req = message[4:].strip(" ,:!")
                 if req:
                     self._push(self._think(req, sender))
@@ -345,7 +358,7 @@ class Minecraft(commands.Cog):
         if not self.world:
             await interaction.response.send_message("Non sono connessa.", ephemeral=True)
             return
-        self.world.chat(testo)
+        self._safe_chat(testo)
         await interaction.response.send_message(f"📣 `{testo}`")
 
     @mc.command(description="Vai a delle coordinate")
@@ -428,14 +441,17 @@ class Minecraft(commands.Cog):
         msg = resp.choices[0].message
         done = []
         for tc in msg.tool_calls or []:
-            args = json.loads(tc.function.arguments or "{}")
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
             if who and tc.function.name in ("come", "follow") and not args.get("player"):
                 args["player"] = who
             done.append(self._dispatch(tc.function.name, args))
         if msg.content:
             done.append(self._clean(msg.content))
         reply = " ".join(p for p in done if p) or "boh non ho capito"
-        self.world.chat(reply[:240])
+        self._safe_chat(reply)
         return reply
 
     def _clean(self, t):
@@ -448,16 +464,21 @@ class Minecraft(commands.Cog):
 
     def _dispatch(self, name, args):
         if name == "say":
-            return args["text"]
+            return args.get("text", "")
         if name == "goto":
-            self._goto(args["x"], args["y"], args["z"])
-            return f"🚶 Vado a `{args['x']} {args['y']} {args['z']}`"
-        if name == "come":
-            ok = self._come(args["player"])
-            return f"🚶 Arrivo da **{args['player']}**" if ok else f"Non vedo **{args['player']}**"
-        if name == "follow":
-            ok = self._follow(args["player"])
-            return f"🐾 Seguo **{args['player']}**" if ok else f"Non vedo **{args['player']}**"
+            try:
+                x, y, z = float(args["x"]), float(args["y"]), float(args["z"])
+            except (KeyError, TypeError, ValueError):
+                return "coordinate non valide"
+            self._goto(x, y, z)
+            return f"🚶 Vado a `{x} {y} {z}`"
+        if name in ("come", "follow"):
+            player = args.get("player")
+            if not player:
+                return "quale giocatore?"
+            ok = (self._come if name == "come" else self._follow)(player)
+            verb = "Arrivo da" if name == "come" else "Seguo"
+            return f"{'🚶' if name == 'come' else '🐾'} {verb} **{player}**" if ok else f"Non vedo **{player}**"
         if name == "stop":
             self._stop()
             return "✋ Fermo."

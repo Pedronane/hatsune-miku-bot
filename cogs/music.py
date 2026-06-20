@@ -1,11 +1,14 @@
 import asyncio
 import random
+import time
 from collections import defaultdict
 
 import discord
 import yt_dlp
 from discord import app_commands
 from discord.ext import commands
+
+STREAM_TTL = 1800  # i link diretti YouTube scadono: ri-risolvi se più vecchi di 30 min
 
 YDL_OPTS = {
     "format": "bestaudio/best",
@@ -37,6 +40,7 @@ class Track:
         self.webpage = info.get("webpage_url", "")
         self.duration = info.get("duration")
         self.requester = requester
+        self.fetched = time.monotonic()
 
 
 class Music(commands.Cog):
@@ -70,14 +74,17 @@ class Music(commands.Cog):
             await vc.move_to(channel)
         return vc
 
-    async def enqueue(self, member, query):
-        guild = member.guild
+    async def _extract(self, query):
         loop = asyncio.get_event_loop()
         with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
             data = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
         if "entries" in data:
             data = data["entries"][0]
-        track = Track(data, member)
+        return data
+
+    async def enqueue(self, member, query):
+        guild = member.guild
+        track = Track(await self._extract(query), member)
         self.queues[guild.id].append(track)
         vc = guild.voice_client
         started = not (vc.is_playing() or vc.is_paused())
@@ -85,7 +92,18 @@ class Music(commands.Cog):
             self.play_next(guild)
         return track, started
 
+    async def _stream_url(self, track):
+        if track.url and (time.monotonic() - track.fetched) < STREAM_TTL:
+            return track.url
+        data = await self._extract(track.webpage or track.title)
+        track.url = data["url"]
+        track.fetched = time.monotonic()
+        return track.url
+
     def play_next(self, guild):
+        asyncio.run_coroutine_threadsafe(self._advance(guild), self.bot.loop)
+
+    async def _advance(self, guild):
         vc = guild.voice_client
         if vc is None:
             return
@@ -103,8 +121,14 @@ class Music(commands.Cog):
                 return
             track = queue.pop(0)
         self.current[gid] = track
-        source = discord.FFmpegPCMAudio(track.url, **FFMPEG_OPTS)
-        source = discord.PCMVolumeTransformer(source, volume=self.volumes[gid])
+        try:
+            url = await self._stream_url(track)
+        except Exception:
+            self.play_next(guild)  # brano morto/non risolvibile: passa al prossimo
+            return
+        source = discord.PCMVolumeTransformer(
+            discord.FFmpegPCMAudio(url, **FFMPEG_OPTS), volume=self.volumes[gid]
+        )
         vc.play(source, after=lambda e: self.play_next(guild))
 
     @app_commands.command(description="Metti su una canzone (nome o link YouTube)")
@@ -113,11 +137,11 @@ class Music(commands.Cog):
         if vc is None:
             return
         await interaction.response.defer()
-        loop = asyncio.get_event_loop()
-        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
-            data = await loop.run_in_executor(None, lambda: ydl.extract_info(brano, download=False))
-        if "entries" in data:
-            data = data["entries"][0]
+        try:
+            data = await self._extract(brano)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Non riesco a prendere il brano: `{str(e)[:150]}`")
+            return
         track = Track(data, interaction.user)
         self.queues[interaction.guild_id].append(track)
         if vc.is_playing() or vc.is_paused():

@@ -19,7 +19,12 @@ intents.voice_states = True
 
 class Bot(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix="!", intents=intents, help_command=None)
+        super().__init__(
+            command_prefix="!",
+            intents=intents,
+            help_command=None,
+            allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True),
+        )
         self.synced = False
 
     async def setup_hook(self):

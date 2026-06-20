@@ -9,7 +9,8 @@ from discord.ext import commands
 
 import db
 
-BADWORDS = {"slur1", "slur2"}
+# Compila con le parole da bloccare (minuscolo). Vuoto = filtro parolacce disattivo.
+BADWORDS = set()
 INVITE = re.compile(r"(discord\.gg/|discord\.com/invite/)", re.I)
 SPAM_WINDOW = 7
 SPAM_MAX = 5
@@ -102,8 +103,14 @@ class Mod(commands.Cog):
     @app_commands.command(description="Sbanna uno (ID utente)")
     @app_commands.default_permissions(ban_members=True)
     async def unban(self, interaction: discord.Interaction, user_id: str):
-        user = discord.Object(id=int(user_id))
-        await interaction.guild.unban(user)
+        if not user_id.isdigit():
+            await interaction.response.send_message("Serve un ID utente numerico.", ephemeral=True)
+            return
+        try:
+            await interaction.guild.unban(discord.Object(id=int(user_id)))
+        except discord.NotFound:
+            await interaction.response.send_message("Quell'utente non è bannato.", ephemeral=True)
+            return
         await interaction.response.send_message(f"✅ Sbannato `{user_id}`.")
 
     @app_commands.command(description="Mute temporaneo, es: 10m 1h")
