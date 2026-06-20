@@ -22,7 +22,7 @@ Bot Discord per un server privato di **~10 amici IRL**. Slash command, cog modul
 - I cog si parlano via `self.bot.get_cog("Nome")`. In particolare **`miku.py` dipende da `Music`** (`connect_member`, `enqueue`, `queues/current/volumes/loop_modes`): cambiare le firme di `Music` può rompere Miku.
 - **Due superfici LLM-agent** (entrambe Groq, tool-calling):
   1. **`miku.py`** — trigger testuale `\bmiku\b` in chat Discord → tool musicali (delegati a `Music`) + `ricorda` (memoria persistente in `miku_facts`). Contesto per-canale in `chat_history`. Il trigger è un gate in codice *prima* dell'LLM: non è aggirabile via prompt.
-  2. **`minecraft.py`** — `/mc ask` da Discord **e** (opzionale) chat in-game → tool che pilotano un personaggio **mineflayer** via JSPyBridge (pacchetto `javascript` → Node). Le callback mineflayer girano su un thread bridge: si rientra sul loop Discord con `_push`. Architettura a livelli, stato step-by-step e gotcha mineflayer in `docs/BOT_MINECRAFT.md`.
+  2. **`minecraft.py`** — `/mc` (connect/say/goto/come/follow/stop/collect/craft/mine/ask). `/mc ask` da Discord **e** (opzionale) chat in-game → tool che pilotano un personaggio **mineflayer** via JSPyBridge (pacchetto `javascript` → Node). Le callback mineflayer girano su un thread bridge: si rientra sul loop Discord con `_push`. Architettura a livelli, stato step-by-step e gotcha mineflayer in `docs/BOT_MINECRAFT.md`.
 - **`music.py`** — yt-dlp estrae lo stream, ffmpeg lo riproduce. Gli URL diretti YouTube **scadono in poche ore**: `play_next` schedula `_advance`, che via `_stream_url` ri-risolve l'URL (TTL 30 min) prima di suonare. `after=` chiama `play_next` da un thread voce.
 
 ## Invarianti di sicurezza (NON regredire — costati un audit)

@@ -17,7 +17,7 @@ Riferimento progettuale: **mindcraft** (mindcraft-bots/mindcraft). NON fare stil
 - [x] **Step 1** — plugin caricati: collectblock, tool, pvp, armor-manager, auto-eat
 - [x] **Step 2** — skill `collect` (legna) + `/mc collect <cosa> <quanti>`
 - [x] **Step 3** — crafting da zero → `wooden_pickaxe` + `/mc craft`. Catena: collect log → assi → bastoni → tavolo (place) → piccone
-- [ ] **Step 4** — skill `mine` (pietra/minerali) con auto-tool + craft strumenti migliori
+- [x] **Step 4** — skill `mine` (pietra/minerali) + `/mc mine`. Auto-tool via collectBlock; si procura da sé il piccone del tier necessario (wooden→stone). Iron+ (oro/diamante/redstone) richiede fusione: non ancora implementata, ritorna messaggio
 - [ ] **Step 5** — loop sopravvivenza (auto-eat + pvp + anti-incastro)
 - [ ] **Step 6** — integrazione LLM: estendere `TOOLS`/`_dispatch`, esecutore lista-ordinata per obiettivi composti
 - [ ] **Step 7** — self-play `/mc auto on|off` (loop throttlato 1 call/N min, spento di default)
@@ -30,7 +30,9 @@ Riferimento progettuale: **mindcraft** (mindcraft-bots/mindcraft). NON fare stil
 - `_push(coro)` — marshalla una coroutine sul loop discord (le callback mineflayer girano su thread bridge!).
 - Movimento: `_goto`, `_come`, `_follow`, `_stop` (pathfinder).
 - Raccolta: `_collect(what,count)` → `_collect_one(block)` (collectBlock).
-- Crafting: `_ensure_planks/_ensure_sticks`, `_ensure_table` → `_place_table`/`_relocate_open`, `_make_pickaxe`, `_craft_one`/`_craft_any`.
+- Crafting: `_ensure_planks/_ensure_sticks`, `_ensure_table` → `_place_table`/`_relocate_open`, `_craft_one`/`_craft_any`.
+- Picconi: `_have_pickaxe_tier()`, `_ensure_wooden_pickaxe`/`_ensure_stone_pickaxe`, `_ensure_pickaxe_tier(req)`; `_make_pickaxe` ora è un wrapper su wooden.
+- Mining: `_mine(what,count)` (risolve alias → `MINE_ALIASES`, garantisce il tier da `ORE_TIER`, poi scava) → `_mine_raw(names,count)` (findBlocks + `_collect_one` un blocco alla volta; collectBlock auto-equipaggia il tool). Costanti modulo: `PICK_TIER`, `MINE_ALIASES`, `ORE_TIER`.
 - LLM: `_think(prompt,who)`, `_dispatch(name,args)`, `_clean(text)`, `TOOLS`, `PERSONA`.
 
 ## ⚠️ Gotcha imparati a caro prezzo (LEGGERE prima di toccare)

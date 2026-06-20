@@ -38,6 +38,29 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {}}}},
 ]
 
+# Step 4 — mining. Tier dei picconi (per harvestare serve un piccone >= tier del blocco).
+PICK_TIER = {"wooden": 1, "golden": 1, "stone": 2, "iron": 3, "diamond": 4, "netherite": 5}
+# Alias italiano/inglese -> nomi blocco Minecraft (varianti normale + deepslate).
+MINE_ALIASES = {
+    "pietra": ["stone"], "sasso": ["stone"], "stone": ["stone"], "cobblestone": ["stone"],
+    "ferro": ["iron_ore", "deepslate_iron_ore"], "iron": ["iron_ore", "deepslate_iron_ore"],
+    "carbone": ["coal_ore", "deepslate_coal_ore"], "coal": ["coal_ore", "deepslate_coal_ore"],
+    "rame": ["copper_ore", "deepslate_copper_ore"], "copper": ["copper_ore", "deepslate_copper_ore"],
+    "lapis": ["lapis_ore", "deepslate_lapis_ore"],
+    "oro": ["gold_ore", "deepslate_gold_ore"], "gold": ["gold_ore", "deepslate_gold_ore"],
+    "redstone": ["redstone_ore", "deepslate_redstone_ore"],
+    "diamante": ["diamond_ore", "deepslate_diamond_ore"], "diamond": ["diamond_ore", "deepslate_diamond_ore"],
+    "smeraldo": ["emerald_ore", "deepslate_emerald_ore"],
+}
+# Tier minimo di piccone per far droppare il blocco (mani nude / legno non bastano sui minerali).
+ORE_TIER = {
+    "stone": 1, "coal_ore": 1, "deepslate_coal_ore": 1,
+    "iron_ore": 2, "deepslate_iron_ore": 2, "copper_ore": 2, "deepslate_copper_ore": 2,
+    "lapis_ore": 2, "deepslate_lapis_ore": 2,
+    "gold_ore": 3, "deepslate_gold_ore": 3, "redstone_ore": 3, "deepslate_redstone_ore": 3,
+    "diamond_ore": 3, "deepslate_diamond_ore": 3, "emerald_ore": 3, "deepslate_emerald_ore": 3,
+}
+
 
 class Minecraft(commands.Cog):
     mc = app_commands.Group(name="mc", description="Controlla il bot dentro Minecraft")
@@ -294,17 +317,88 @@ class Minecraft(commands.Cog):
             return None
         return self._table_block()
 
-    def _make_pickaxe(self):
+    def _have_pickaxe_tier(self):
+        best = 0
+        for it in self._inv():
+            n = str(it.name)
+            if n.endswith("_pickaxe"):
+                best = max(best, PICK_TIER.get(n[:-8], 0))
+        return best
+
+    def _ensure_wooden_pickaxe(self):
+        if self._have_pickaxe_tier() >= 1:
+            return True
         table = self._ensure_table()
         if table is None:
-            return "non riesco a piazzare il tavolo"
-        if not self._ensure_sticks(2):
-            return "non riesco a fare i bastoni"
-        if not self._ensure_planks(3):
-            return "non riesco a fare le assi"
-        if not self._craft_one("wooden_pickaxe", table):
-            return "non riesco a craftare il piccone"
-        return "piccone di legno pronto!"
+            return False
+        if not self._ensure_sticks(2) or not self._ensure_planks(3):
+            return False
+        return self._craft_one("wooden_pickaxe", table)
+
+    def _ensure_stone_pickaxe(self):
+        if self._have_pickaxe_tier() >= 2:
+            return True
+        if not self._ensure_wooden_pickaxe():
+            return False
+        if self._count_suffix("cobblestone", exact=True) < 3:
+            self._mine_raw(["stone"], 3)
+        if self._count_suffix("cobblestone", exact=True) < 3 or not self._ensure_sticks(2):
+            return False
+        table = self._ensure_table()
+        return bool(table) and self._craft_one("stone_pickaxe", table)
+
+    def _ensure_pickaxe_tier(self, req):
+        if self._have_pickaxe_tier() >= req:
+            return True
+        if req <= 1:
+            return self._ensure_wooden_pickaxe()
+        if req == 2:
+            return self._ensure_stone_pickaxe()
+        return False  # iron+ richiede fusione: non ancora implementata
+
+    def _make_pickaxe(self):
+        return "piccone di legno pronto!" if self._ensure_wooden_pickaxe() else "non riesco a fare il piccone"
+
+    def _mine_raw(self, names, count):
+        ids = []
+        for nm in names:
+            b = self.world.registry.blocksByName[nm]
+            if b:
+                ids.append(b.id)
+        if not ids:
+            return 0
+        got = 0
+        for dist in (32, 64, 128):
+            found = self.world.findBlocks({"matching": ids, "maxDistance": dist, "count": max(count * 3, 10)})
+            for i in range(int(found.length)):
+                blk = self.world.blockAt(found[i])
+                if blk is None:
+                    continue
+                # collectBlock equipaggia da sé il tool migliore (integra mineflayer-tool);
+                # il tier del piccone è già garantito da _ensure_pickaxe_tier.
+                if self._collect_one(blk) is None:
+                    got += 1
+                    if got >= count:
+                        return got
+            if got:
+                return got
+        return got
+
+    def _mine(self, what="pietra", count=1):
+        names = MINE_ALIASES.get(what.lower().strip())
+        if not names:
+            return f"non so minare '{what}'"
+        req = max((ORE_TIER.get(n, 1) for n in names), default=1)
+        if not self._ensure_pickaxe_tier(req):
+            if req >= 3:
+                return f"per {what} serve un piccone di ferro e non so ancora fonderlo"
+            return f"non riesco a procurarmi il piccone adatto per {what}"
+        got = self._mine_raw(names, count)
+        if got >= count:
+            return f"minati {got} {what}"
+        if got:
+            return f"minati solo {got}/{count} {what} qui intorno"
+        return f"non trovo {what} qui intorno"
 
     def _goto(self, x, y, z):
         self.world.pathfinder.setMovements(self.movements)
@@ -416,6 +510,15 @@ class Minecraft(commands.Cog):
         await interaction.response.defer()
         out = await asyncio.to_thread(self._make_pickaxe)
         await interaction.followup.send(f"🛠️ {out}")
+
+    @mc.command(description="Scava pietra o minerali (si procura da sé il piccone giusto)")
+    async def mine(self, interaction: discord.Interaction, cosa: str = "pietra", quanti: int = 1):
+        if not self.world:
+            await interaction.response.send_message("Non sono connessa.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        out = await asyncio.to_thread(self._mine, cosa, quanti)
+        await interaction.followup.send(f"⛏️ {out}")
 
     @mc.command(description="Chiedi a Miku in linguaggio naturale")
     async def ask(self, interaction: discord.Interaction, richiesta: str):
