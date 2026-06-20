@@ -1,44 +1,49 @@
-# Discord Server Bot
+# CLAUDE.md
 
-Bot Discord per un server privato di **10 amici IRL** (soli uomini, nessun tema "inclusività/pronomi"). Tono dei messaggi verso gli utenti: **italiano slang/ironico tra amici**.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Stack
+## Cos'è
 
-- **discord.py** 2.x (Python 3.14), slash commands (`app_commands`)
-- **SQLite** per persistenza (XP, config, moderazione) — file locale, no server DB
-- **yt-dlp + ffmpeg** per musica da YouTube
-- **mineflayer** (via pacchetto Python `javascript`/JSPyBridge → Node) per il bot Minecraft
-- **Groq** (`AsyncGroq`, free-tier) per `/mc ask` linguaggio naturale → tool calling
-- Hosting target: **Raspberry/hardware dedicato sempre acceso** (systemd service)
-- Segreti in `.env` (`DISCORD_TOKEN`, `MC_*`, `GROQ_API_KEY`), caricati con python-dotenv
+Bot Discord per un server privato di **~10 amici IRL**. Slash command, cog modulari, SQLite locale. Tono dei messaggi verso gli utenti: **italiano slang/ironico tra amici**. Gira 24/7 su un **Raspberry** (systemd). Due "cervelli" LLM (Groq free-tier, `llama-3.1-8b-instant`): **Miku DJ** in chat Discord e il **bot Minecraft**.
 
-## Architettura
+## Comandi utili
 
-Cogs separati, un file per modulo in `cogs/`:
+- **Avvio / test manuale:** `./venv/bin/python bot.py` → deve stampare `Online come ...`.
+- **Check sintassi** (non esiste una test suite): `python -m py_compile bot.py db.py cogs/*.py`.
+- **Dipendenze:** `./venv/bin/pip install -r requirements.txt` + `npm install` dei plugin mineflayer (vedi `DEPLOY.md`).
+- **Deploy sul Pi:** `git checkout -- package.json package-lock.json && git pull --ff-only && sudo systemctl restart discordbot` (l'`npm install` sul Pi riscrive `package*.json`, va scartato prima del pull).
+- **Log:** `journalctl -u discordbot -f`.
+- **Test del cog Minecraft:** niente unit test — si prova **live sul Pi contro un mondo LAN** con script monouso in `/tmp`. Procedura esatta in `docs/BOT_MINECRAFT.md`.
 
-| Cog | Contenuto |
-|-----|-----------|
-| `music.py` | Play/queue/skip da YouTube (yt-dlp + ffmpeg) |
-| `xp.py` | XP per messaggi, comando `/top` (classifica). **Nessun ruolo automatico** |
-| `mod.py` | Moderazione **completa**: kick/ban/mute, automod (spam/link/parolacce), warn system, mute temporanei, anti-raid, log azioni |
-| `fun.py` | `/poll`, `/roll`, `/scegli`, `8ball`, meme/gif, mini-giochi (trivia, impiccato, tris) |
-| `minecraft.py` | bot Minecraft quasi-autonomo. `/mc` (connect/say/goto/come/follow/stop/collect/craft/ask) + chat in-game "miku ...". mineflayer+plugin dentro Python (JSPyBridge). Skill deterministiche (collect legna, craft da zero→piccone) + LLM router Groq. **Vedi `docs/BOT_MINECRAFT.md` per architettura, stato step-by-step e gotcha (versione≤1.21.8, timeout JSPyBridge, deploy package.json).** |
+## Architettura (big picture)
 
-`bot.py` = entrypoint: carica i cog, gestisce intents e sync degli slash command.
+- `bot.py` = entrypoint: intents, carica i 6 cog elencati in `COGS`, sincronizza gli slash command **per-guild** in `on_ready` (una sola volta, guard `self.synced`). Qui sono impostati gli `allowed_mentions` globali.
+- Ogni feature è un `commands.Cog` in `cogs/`, caricato come extension. Persistenza condivisa via `db.py` (SQLite, **query parametrizzate**, file `data.db` non versionato; tabelle: `xp`, `warns`, `chat_history`, `miku_facts`).
+- I cog si parlano via `self.bot.get_cog("Nome")`. In particolare **`miku.py` dipende da `Music`** (`connect_member`, `enqueue`, `queues/current/volumes/loop_modes`): cambiare le firme di `Music` può rompere Miku.
+- **Due superfici LLM-agent** (entrambe Groq, tool-calling):
+  1. **`miku.py`** — trigger testuale `\bmiku\b` in chat Discord → tool musicali (delegati a `Music`) + `ricorda` (memoria persistente in `miku_facts`). Contesto per-canale in `chat_history`. Il trigger è un gate in codice *prima* dell'LLM: non è aggirabile via prompt.
+  2. **`minecraft.py`** — `/mc ask` da Discord **e** (opzionale) chat in-game → tool che pilotano un personaggio **mineflayer** via JSPyBridge (pacchetto `javascript` → Node). Le callback mineflayer girano su un thread bridge: si rientra sul loop Discord con `_push`. Architettura a livelli, stato step-by-step e gotcha mineflayer in `docs/BOT_MINECRAFT.md`.
+- **`music.py`** — yt-dlp estrae lo stream, ffmpeg lo riproduce. Gli URL diretti YouTube **scadono in poche ore**: `play_next` schedula `_advance`, che via `_stream_url` ri-risolve l'URL (TTL 30 min) prima di suonare. `after=` chiama `play_next` da un thread voce.
 
-## Comandi
+## Invarianti di sicurezza (NON regredire — costati un audit)
 
-- **Solo slash command** (`/`). Niente prefisso `!`.
-- I vecchi comandi a prefisso (`!setup`, `!nuke`, `!makeroles`, `!say`, `!embed`, `!backup`) vanno **rimossi** — il server è già configurato.
+- **Minecraft: mai comandi di gioco da input non fidato.** Ogni testo dinamico verso la chat MC passa per `_safe_chat`, che neutralizza il `/` iniziale. Una stringa che inizia con `/` in `world.chat` viene **eseguita come comando** → con bot op = takeover del server. Non chiamare `world.chat` direttamente con output LLM o utente.
+- **Trigger LLM in-game OFF di default** (`MC_INGAME_LLM`). Il server MC è offline-mode: chiunque entra con qualsiasi username e potrebbe pilotare il bot. `/mc ask` da Discord è l'unico path con utenti autenticati.
+- **Tool LLM solo dai `tool_calls` nativi** dell'API, mai parsare/eseguire "funzioni" dal testo del modello.
+- **Output LLM e relay non devono mai pingare:** `AllowedMentions.none()` sui send LLM/relay; il default globale in `bot.py` blocca già `@everyone`/`@here`/ruoli.
+- **La memoria di Miku (`miku_facts`) è dato non fidato:** va iniettata nel system prompt etichettata come tale, mai trattata come istruzioni. Pulizia con `/miku_forget` (richiede `manage_guild`).
+- **Permessi del bot Discord: minimo necessario** (kick/ban/moderate_members/manage_messages + voce), **non** Administrator (il README storico dice Administrator — è eccessivo).
 
-## Convenzioni codice
+## Convenzioni
 
-- No commenti, no docstring, no error handling per casi impossibili
-- Edit > nuovi file; niente feature extra non richieste
-- Verifica reale (avvio bot + test) prima di dire "fatto"
-- Libreria/framework → consulta docs aggiornate (context7/find-docs) prima di scrivere
+- **Solo slash command** (`/`). I vecchi comandi a prefisso (`!setup/!nuke/!makeroles/...`) sono rimossi: il server è già configurato.
+- Stile del repo: niente commenti/docstring superflui, niente error-handling per casi impossibili, **edit > nuovi file**, niente feature non richieste. (I pochi commenti presenti spiegano gli invarianti di sicurezza sopra: quelli valgono la verbosità.)
+- **Verifica reale** (avvio bot / test live sul Pi) prima di dire "fatto".
+- Libreria/framework → consulta docs aggiornate (context7) prima di scrivere.
 
-## Repo
+## Hosting (Pi)
 
-Pubblica: https://github.com/Pedronane/discord-server-bot
-`.env`, `config.json`, `venv/`, `backup_*.json` esclusi da git. **Mai committare il token.**
+- **Python ≥3.13:** serve `audioop-lts` (già in `requirements.txt`) o `discord.py` non importa la voce → niente musica.
+- **yt-dlp** si rompe quando YouTube cambia: tienilo aggiornato (timer systemd in `DEPLOY.md`).
+- Segreti in `.env` (gitignored): `DISCORD_TOKEN`, `GROQ_API_KEY`, `MC_*`, `MC_INGAME_LLM`. `.env`/`data.db`/`config.json`/`venv/` fuori da git — **mai committare il token**.
+- Dettagli infra (host Tailscale, utente, mondo LAN, versione MC ≤1.21.8) in `docs/BOT_MINECRAFT.md`.
