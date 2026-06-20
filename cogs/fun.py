@@ -168,15 +168,23 @@ class Fun(commands.Cog):
         random.shuffle(answers)
 
         view = discord.ui.View(timeout=30)
-        answered = {}
+        answered = set()
 
         def make_cb(ans):
             async def cb(inter):
+                if inter.user.id in answered:
+                    await inter.response.send_message("Hai già risposto, furbo.", ephemeral=True)
+                    return
+                answered.add(inter.user.id)
                 if ans == correct:
-                    await inter.response.send_message(f"✅ {inter.user.mention} esatto: **{correct}**")
+                    for child in view.children:
+                        child.disabled = True
+                    view.stop()
+                    await inter.response.edit_message(
+                        content=f"🧠 **{question}**\n✅ {inter.user.mention} esatto: **{correct}**", view=view
+                    )
                 else:
                     await inter.response.send_message(f"❌ {inter.user.mention} sbagliato.", ephemeral=True)
-                answered[inter.user.id] = ans
             return cb
 
         for ans in answers:
