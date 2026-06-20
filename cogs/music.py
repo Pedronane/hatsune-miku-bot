@@ -2,6 +2,7 @@ import asyncio
 import random
 import time
 from collections import defaultdict
+from urllib.parse import urlparse
 
 import discord
 import yt_dlp
@@ -74,7 +75,18 @@ class Music(commands.Cog):
             await vc.move_to(channel)
         return vc
 
+    def _guard_query(self, query):
+        # Un URL non-YouTube passato a yt-dlp attiva il generic extractor:
+        # file:// e host interni = lettura file locali / SSRF. Solo link YT o ricerca testuale.
+        q = query.strip()
+        if "://" in q:
+            host = (urlparse(q).hostname or "").lower()
+            if host != "youtu.be" and not host.endswith("youtube.com"):
+                raise ValueError("Accetto solo link YouTube, oppure cerca per nome.")
+        return q
+
     async def _extract(self, query):
+        query = self._guard_query(query)
         loop = asyncio.get_event_loop()
         with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
             data = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))

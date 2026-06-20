@@ -127,12 +127,16 @@ class Fun(commands.Cog):
     @app_commands.command(description="Un meme a caso")
     async def meme(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        async with aiohttp.ClientSession() as s:
-            async with s.get("https://meme-api.com/gimme") as r:
-                data = await r.json()
-        embed = discord.Embed(title=data["title"], colour=discord.Colour.random())
-        embed.set_image(url=data["url"])
-        embed.set_footer(text=f"r/{data['subreddit']}")
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get("https://meme-api.com/gimme") as r:
+                    data = await r.json()
+            embed = discord.Embed(title=data["title"], colour=discord.Colour.random())
+            embed.set_image(url=data["url"])
+            embed.set_footer(text=f"r/{data['subreddit']}")
+        except Exception:
+            await interaction.followup.send("❌ Niente meme, l'API fa i capricci. Riprova.")
+            return
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(description="Sfida qualcuno a tris")
@@ -150,13 +154,17 @@ class Fun(commands.Cog):
     @app_commands.command(description="Quiz a risposta multipla")
     async def trivia(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        async with aiohttp.ClientSession() as s:
-            async with s.get("https://opentdb.com/api.php?amount=1&type=multiple") as r:
-                data = await r.json()
-        q = data["results"][0]
-        question = html.unescape(q["question"])
-        correct = html.unescape(q["correct_answer"])
-        answers = [html.unescape(a) for a in q["incorrect_answers"]] + [correct]
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get("https://opentdb.com/api.php?amount=1&type=multiple") as r:
+                    data = await r.json()
+            q = data["results"][0]
+            question = html.unescape(q["question"])
+            correct = html.unescape(q["correct_answer"])
+            answers = [html.unescape(a) for a in q["incorrect_answers"]] + [correct]
+        except Exception:
+            await interaction.followup.send("❌ Niente quiz, l'API è giù. Riprova.")
+            return
         random.shuffle(answers)
 
         view = discord.ui.View(timeout=30)

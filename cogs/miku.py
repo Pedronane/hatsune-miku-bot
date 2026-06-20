@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import re
+import time
 
 import aiohttp
 import discord
@@ -14,6 +15,7 @@ import db
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = "llama-3.1-8b-instant"
 TRIGGER = re.compile(r"\bmiku\b", re.IGNORECASE)
+COOLDOWN = 5  # secondi per-utente: evita flood di chiamate Groq
 # Igiene display: se il modello sputa un tag <function=...> come testo lo nascondiamo,
 # ma NON lo eseguiamo mai (i tool partono solo dai tool_calls nativi dell'API).
 FUNC_TAG = re.compile(r"<function=\w+[^>]*>?(?:\{.*?\})?\s*(?:</function>)?", re.DOTALL)
@@ -68,6 +70,7 @@ class Miku(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.key = os.environ.get("GROQ_API_KEY")
+        self.last = {}
 
     async def groq(self, messages, tools=None):
         payload = {"model": MODEL, "messages": messages, "temperature": 0.8, "max_tokens": 400}
@@ -175,6 +178,11 @@ class Miku(commands.Cog):
             return
         if not self.key:
             return
+        key = (message.guild.id, message.author.id)
+        now = time.monotonic()
+        if now - self.last.get(key, 0) < COOLDOWN:
+            return
+        self.last[key] = now
         gid = message.guild.id
         cid = message.channel.id
         sys = SYSTEM

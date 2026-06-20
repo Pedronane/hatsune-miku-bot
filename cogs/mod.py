@@ -85,7 +85,11 @@ class Mod(commands.Cog):
     @app_commands.command(description="Caccia uno a calci")
     @app_commands.default_permissions(kick_members=True)
     async def kick(self, interaction: discord.Interaction, membro: discord.Member, motivo: str = "nessuno"):
-        await membro.kick(reason=motivo)
+        try:
+            await membro.kick(reason=motivo)
+        except discord.HTTPException:
+            await interaction.response.send_message("Non ce la faccio: ruolo troppo alto o permessi mancanti.", ephemeral=True)
+            return
         await interaction.response.send_message(f"👢 {membro} kickato. Motivo: {motivo}")
         await self.log(interaction.guild, discord.Embed(
             title="👢 Kick", description=f"{membro.mention} da {interaction.user.mention}\nMotivo: {motivo}",
@@ -94,7 +98,11 @@ class Mod(commands.Cog):
     @app_commands.command(description="Banna uno per sempre")
     @app_commands.default_permissions(ban_members=True)
     async def ban(self, interaction: discord.Interaction, membro: discord.Member, motivo: str = "nessuno"):
-        await membro.ban(reason=motivo)
+        try:
+            await membro.ban(reason=motivo)
+        except discord.HTTPException:
+            await interaction.response.send_message("Non ce la faccio: ruolo troppo alto o permessi mancanti.", ephemeral=True)
+            return
         await interaction.response.send_message(f"🔨 {membro} bannato. Motivo: {motivo}")
         await self.log(interaction.guild, discord.Embed(
             title="🔨 Ban", description=f"{membro.mention} da {interaction.user.mention}\nMotivo: {motivo}",
@@ -111,6 +119,9 @@ class Mod(commands.Cog):
         except discord.NotFound:
             await interaction.response.send_message("Quell'utente non è bannato.", ephemeral=True)
             return
+        except discord.HTTPException:
+            await interaction.response.send_message("Non riesco a sbannare: permessi mancanti.", ephemeral=True)
+            return
         await interaction.response.send_message(f"✅ Sbannato `{user_id}`.")
 
     @app_commands.command(description="Mute temporaneo, es: 10m 1h")
@@ -120,7 +131,11 @@ class Mod(commands.Cog):
         if secs is None or secs > 2419200:
             await interaction.response.send_message("Durata tipo `10m`, `2h`, `1d` (max 28d).", ephemeral=True)
             return
-        await membro.timeout(timedelta(seconds=secs), reason=motivo)
+        try:
+            await membro.timeout(timedelta(seconds=secs), reason=motivo)
+        except discord.HTTPException:
+            await interaction.response.send_message("Non ce la faccio: ruolo troppo alto o permessi mancanti.", ephemeral=True)
+            return
         await interaction.response.send_message(f"🔇 {membro.mention} mutato per {durata}. Motivo: {motivo}")
         await self.log(interaction.guild, discord.Embed(
             title="🔇 Mute", description=f"{membro.mention} per {durata} da {interaction.user.mention}\nMotivo: {motivo}",
@@ -129,7 +144,11 @@ class Mod(commands.Cog):
     @app_commands.command(description="Togli il mute")
     @app_commands.default_permissions(moderate_members=True)
     async def unmute(self, interaction: discord.Interaction, membro: discord.Member):
-        await membro.timeout(None)
+        try:
+            await membro.timeout(None)
+        except discord.HTTPException:
+            await interaction.response.send_message("Non riesco a smutare: permessi mancanti.", ephemeral=True)
+            return
         await interaction.response.send_message(f"🔊 {membro.mention} smutato.")
 
     @app_commands.command(description="Ammonisci uno")

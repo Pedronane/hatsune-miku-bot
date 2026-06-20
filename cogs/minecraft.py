@@ -75,8 +75,10 @@ class Minecraft(commands.Cog):
 
     def _safe_chat(self, text):
         # Mai mandare comandi di gioco: una stringa che inizia con "/" verrebbe
-        # eseguita come comando Minecraft (es. /op, /kill). Neutralizza il prefisso.
-        text = str(text).strip()
+        # eseguita come comando Minecraft (es. /op, /kill). I newline NON vanno
+        # lasciati passare: bot.chat() spezza sui "\n" e invia ogni riga separata,
+        # così una seconda riga "/op tizio" verrebbe eseguita aggirando il check.
+        text = re.sub(r"\s+", " ", str(text)).strip()
         if text.startswith("/"):
             text = "​" + text
         if self.world:
@@ -489,7 +491,7 @@ class Minecraft(commands.Cog):
         if message.author.bot or not self.world:
             return
         if self.relay_id and message.channel.id == self.relay_id and not message.content.startswith("/"):
-            self.world.chat(f"<{message.author.display_name}> {message.content}")
+            self._safe_chat(f"<{message.author.display_name}> {message.content}")
 
 
 async def setup(bot):
