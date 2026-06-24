@@ -18,6 +18,9 @@ YDL_OPTS = {
     "default_search": "ytsearch",
     "source_address": "0.0.0.0",
 }
+# Opts leggeri per la fase di selezione: solo metadati (titolo/id), niente stream URL.
+YDL_FLAT = {**YDL_OPTS, "extract_flat": True}
+MIKU_QUERY = "hatsune miku"  # ogni brano cerca prima la sua cover Vocaloid
 FFMPEG_OPTS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",
@@ -91,15 +94,55 @@ class Music(commands.Cog):
         with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
             data = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
         if "entries" in data:
-            data = data["entries"][0]
+            entries = data["entries"]
+            if not entries:
+                raise ValueError("Nessun risultato trovato.")
+            data = entries[0]
         return data
+
+    async def _search_miku(self, title):
+        # Cerca la cover Hatsune Miku di un brano; ritorna l'URL YouTube o None.
+        loop = asyncio.get_event_loop()
+        search = f"ytsearch5:{title} {MIKU_QUERY}"
+        with yt_dlp.YoutubeDL(YDL_FLAT) as ydl:
+            data = await loop.run_in_executor(None, lambda: ydl.extract_info(search, download=False))
+        for e in data.get("entries") or []:
+            if "miku" in (e.get("title") or "").lower():
+                vid = e.get("id")
+                return f"https://www.youtube.com/watch?v={vid}" if vid else e.get("url")
+        return None
+
+    async def _miku_info(self, query):
+        # Risolve un brano preferendo sempre la cover Miku. Ritorna (info, is_miku).
+        q = self._guard_query(query)
+        original = None
+        if "://" in q:
+            original = await self._extract(q)
+            if "miku" in original.get("title", "").lower():
+                return original, True  # link già Miku: tienilo com'è
+            title = original.get("title", "")
+        else:
+            title = q
+        try:
+            cover = await self._search_miku(title)
+        except Exception:
+            cover = None
+        if cover:
+            try:
+                return await self._extract(cover), True
+            except Exception:
+                pass
+        if original is None:
+            original = await self._extract(q)
+        return original, False
 
     async def enqueue(self, member, query):
         guild = member.guild
-        track = Track(await self._extract(query), member)
+        info, _ = await self._miku_info(query)
+        track = Track(info, member)
         self.queues[guild.id].append(track)
         vc = guild.voice_client
-        started = not (vc.is_playing() or vc.is_paused())
+        started = vc is None or not (vc.is_playing() or vc.is_paused())
         if started:
             self.play_next(guild)
         return track, started
@@ -150,18 +193,19 @@ class Music(commands.Cog):
             return
         await interaction.response.defer()
         try:
-            data = await self._extract(brano)
+            data, is_miku = await self._miku_info(brano)
+            track = Track(data, interaction.user)
         except Exception as e:
             await interaction.followup.send(f"❌ Non riesco a prendere il brano: `{str(e)[:150]}`")
             return
-        track = Track(data, interaction.user)
         self.queues[interaction.guild_id].append(track)
+        tag = "💙 Versione Miku" if is_miku else "Versione originale"
         if vc.is_playing() or vc.is_paused():
             pos = len(self.queues[interaction.guild_id])
-            await interaction.followup.send(f"➕ In coda (#{pos}): **{track.title}** `{fmt_dur(track.duration)}`")
+            await interaction.followup.send(f"➕ In coda (#{pos}): **{track.title}** `{fmt_dur(track.duration)}` · {tag}")
         else:
             self.play_next(interaction.guild)
-            await interaction.followup.send(f"🎵 Ora suona: **{track.title}** `{fmt_dur(track.duration)}`")
+            await interaction.followup.send(f"🎵 Ora suona: **{track.title}** `{fmt_dur(track.duration)}` · {tag}")
 
     @app_commands.command(description="Salta il brano corrente")
     async def skip(self, interaction: discord.Interaction):
