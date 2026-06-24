@@ -1,5 +1,6 @@
 import asyncio
 import random
+import re
 import time
 from collections import defaultdict
 from urllib.parse import urlparse
@@ -21,6 +22,16 @@ YDL_OPTS = {
 # Opts leggeri per la fase di selezione: solo metadati (titolo/id), niente stream URL.
 YDL_FLAT = {**YDL_OPTS, "extract_flat": True}
 MIKU_QUERY = "hatsune miku"  # ogni brano cerca prima la sua cover Vocaloid
+MIKU_EXPLICIT = ("miku", "初音", "ミク")  # segnale Miku forte (anche giapponese)
+MIKU_SIGNALS = MIKU_EXPLICIT + ("vocaloid",)  # + vocaloid generico (segnale debole)
+# Parole-rumore e funzione (EN/IT): non identificano la canzone, escluse dal match di pertinenza.
+NOISE = {
+    "official", "video", "music", "lyrics", "lyric", "audio", "remastered", "remaster", "feat",
+    "cover", "the", "and", "ufficiale", "testo", "con", "version", "live", "remix", "nightcore",
+    "hatsune", "miku", "vocaloid", "that", "this", "you", "your", "are", "was", "for", "with",
+    "from", "what", "when", "who", "why", "how", "not", "but", "all", "out", "can", "una", "uno",
+    "che", "non", "per", "del", "della", "dei", "delle", "come", "mia", "mio", "gli", "nel", "nella",
+}
 FFMPEG_OPTS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",
@@ -35,6 +46,40 @@ def fmt_dur(seconds):
     if h:
         return f"{h}:{m:02d}:{s:02d}"
     return f"{m}:{s:02d}"
+
+
+def _song_tokens(text):
+    # Parole "forti" che identificano la canzone (no rumore, no parole-funzione, no termini Miku).
+    return {t for t in re.findall(r"[^\W_]+", (text or "").lower(), re.UNICODE)
+            if len(t) >= 3 and t not in NOISE}
+
+
+def _clean_term(text):
+    # Toglie i tag tra parentesi/【】 e il rumore: query di ricerca più pulita (utile sui titoli dei link).
+    text = re.sub(r"[\(\[【].*?[\)\]】]", " ", text or "")
+    return " ".join(w for w in re.findall(r"[^\W_]+", text, re.UNICODE) if w.lower() not in NOISE)
+
+
+def _pick_cover(entries, query):
+    # Sceglie la miglior cover Miku tra i risultati: deve avere un segnale Miku (titolo o canale)
+    # E essere pertinente alla canzone richiesta. Priorità: pertinenza > Miku esplicito > rank.
+    qtok = _song_tokens(query)
+    if not qtok:
+        return None
+    best = None
+    for rank, e in enumerate(entries):
+        title = e.get("title") or ""
+        hay = f"{title} {e.get('uploader') or ''} {e.get('channel') or ''}".lower()
+        if not any(s in hay for s in MIKU_SIGNALS):
+            continue
+        overlap = sum(1 for t in qtok if t in title.lower())
+        if not overlap:
+            continue
+        explicit = any(s in hay for s in MIKU_EXPLICIT)
+        score = (overlap, explicit, -rank)
+        if best is None or score > best[0]:
+            best = (score, e)
+    return best[1] if best else None
 
 
 class Track:
@@ -100,17 +145,18 @@ class Music(commands.Cog):
             data = entries[0]
         return data
 
-    async def _search_miku(self, title):
+    async def _search_miku(self, query):
         # Cerca la cover Hatsune Miku di un brano; ritorna l'URL YouTube o None.
         loop = asyncio.get_event_loop()
-        search = f"ytsearch5:{title} {MIKU_QUERY}"
+        term = _clean_term(query) or query
+        search = f"ytsearch10:{term} {MIKU_QUERY}"
         with yt_dlp.YoutubeDL(YDL_FLAT) as ydl:
             data = await loop.run_in_executor(None, lambda: ydl.extract_info(search, download=False))
-        for e in data.get("entries") or []:
-            if "miku" in (e.get("title") or "").lower():
-                vid = e.get("id")
-                return f"https://www.youtube.com/watch?v={vid}" if vid else e.get("url")
-        return None
+        e = _pick_cover(data.get("entries") or [], query)
+        if not e:
+            return None
+        vid = e.get("id")
+        return f"https://www.youtube.com/watch?v={vid}" if vid else e.get("url")
 
     async def _miku_info(self, query):
         # Risolve un brano preferendo sempre la cover Miku. Ritorna (info, is_miku).
