@@ -5,12 +5,14 @@ import time
 from collections import defaultdict
 from urllib.parse import urlparse
 
+import aiohttp
 import discord
 import yt_dlp
 from discord import app_commands
 from discord.ext import commands
 
 STREAM_TTL = 1800  # i link diretti YouTube scadono: ri-risolvi se più vecchi di 30 min
+VOCADB_API = "https://vocadb.net/api/songs"  # database canonico Vocaloid: cover catalogate con artista certo
 
 YDL_OPTS = {
     "format": "bestaudio/best",
@@ -145,6 +147,35 @@ class Music(commands.Cog):
             data = entries[0]
         return data
 
+    async def _vocadb_cover(self, query):
+        # Primo tentativo ad alta precisione: cover catalogata su VocaDB, attribuita a Miku,
+        # con video YouTube e pertinente. Solo songType "Cover" -> niente omonimi Vocaloid.
+        qtok = _song_tokens(query)
+        if not qtok:
+            return None
+        params = {"query": query, "fields": "PVs,Artists", "maxResults": "10",
+                  "preferAccurateMatches": "true", "nameMatchMode": "Auto", "sort": "FavoritedTimes"}
+        try:
+            timeout = aiohttp.ClientTimeout(total=8)
+            async with aiohttp.ClientSession(timeout=timeout) as s:
+                async with s.get(VOCADB_API, params=params,
+                                 headers={"User-Agent": "hatsune-miku-bot"}) as r:
+                    data = await r.json()
+        except Exception:
+            return None  # VocaDB giù/lento: si passa al fallback YouTube
+        for song in data.get("items") or []:
+            if song.get("songType") != "Cover":
+                continue
+            artists = (song.get("artistString") or "").lower()
+            if not any(a in artists for a in ("初音ミク", "hatsune miku", "miku")):
+                continue
+            if not any(t in (song.get("name") or "").lower() for t in qtok):
+                continue
+            for pv in song.get("pvs") or []:
+                if pv.get("service") == "Youtube" and not pv.get("disabled") and pv.get("pvId"):
+                    return f"https://www.youtube.com/watch?v={pv['pvId']}"
+        return None
+
     async def _search_miku(self, query):
         # Cerca la cover Hatsune Miku di un brano; ritorna l'URL YouTube o None.
         loop = asyncio.get_event_loop()
@@ -158,6 +189,10 @@ class Music(commands.Cog):
         vid = e.get("id")
         return f"https://www.youtube.com/watch?v={vid}" if vid else e.get("url")
 
+    async def _find_cover(self, query):
+        # VocaDB (preciso, cover catalogate Miku) -> ricerca YouTube euristica.
+        return await self._vocadb_cover(query) or await self._search_miku(query)
+
     async def _miku_info(self, query):
         # Risolve un brano preferendo sempre la cover Miku. Ritorna (info, is_miku).
         q = self._guard_query(query)
@@ -170,7 +205,7 @@ class Music(commands.Cog):
         else:
             title = q
         try:
-            cover = await self._search_miku(title)
+            cover = await self._find_cover(title)
         except Exception:
             cover = None
         if cover:
