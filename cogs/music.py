@@ -11,6 +11,7 @@ from discord import app_commands
 from discord.ext import commands
 
 STREAM_TTL = 1800  # i link diretti YouTube scadono: ri-risolvi se più vecchi di 30 min
+MIKU_COLOR = discord.Colour(0x39C5BB)  # teal ufficiale Hatsune Miku
 
 YDL_OPTS = {
     "format": "bestaudio/best",
@@ -88,6 +89,7 @@ class Track:
         self.url = info["url"]
         self.webpage = info.get("webpage_url", "")
         self.duration = info.get("duration")
+        self.thumb = info.get("thumbnail")
         self.requester = requester
         self.fetched = time.monotonic()
 
@@ -233,25 +235,42 @@ class Music(commands.Cog):
         vc.play(source, after=lambda e: self.play_next(guild))
 
     @app_commands.command(description="Metti su una canzone (nome o link YouTube)")
-    async def play(self, interaction: discord.Interaction, brano: str):
+    @app_commands.describe(versione="Miku (default) o originale, se la cover Vocaloid dà fastidio")
+    @app_commands.choices(versione=[
+        app_commands.Choice(name="💙 Miku", value="miku"),
+        app_commands.Choice(name="Originale", value="originale"),
+    ])
+    async def play(self, interaction: discord.Interaction, brano: str,
+                   versione: app_commands.Choice[str] = None):
         vc = await self.ensure_voice(interaction)
         if vc is None:
             return
         await interaction.response.defer()
         try:
-            data, is_miku = await self._miku_info(brano)
+            if versione and versione.value == "originale":
+                data, is_miku = await self._extract(self._guard_query(brano)), False
+            else:
+                data, is_miku = await self._miku_info(brano)
             track = Track(data, interaction.user)
         except Exception as e:
             await interaction.followup.send(f"❌ Non riesco a prendere il brano: `{str(e)[:150]}`")
             return
         self.queues[interaction.guild_id].append(track)
         tag = "💙 Versione Miku" if is_miku else "Versione originale"
-        if vc.is_playing() or vc.is_paused():
-            pos = len(self.queues[interaction.guild_id])
-            await interaction.followup.send(f"➕ In coda (#{pos}): **{track.title}** `{fmt_dur(track.duration)}` · {tag}")
-        else:
+        playing = vc.is_playing() or vc.is_paused()
+        if not playing:
             self.play_next(interaction.guild)
-            await interaction.followup.send(f"🎵 Ora suona: **{track.title}** `{fmt_dur(track.duration)}` · {tag}")
+        pos = len(self.queues[interaction.guild_id])
+        emb = discord.Embed(
+            title=f"➕ In coda · #{pos}" if playing else "🎵 Ora suona",
+            description=f"**[{track.title}]({track.webpage})**" if track.webpage else f"**{track.title}**",
+            colour=MIKU_COLOR,
+        )
+        emb.add_field(name="Durata", value=f"`{fmt_dur(track.duration)}`")
+        emb.add_field(name="Versione", value=tag)
+        if track.thumb:
+            emb.set_thumbnail(url=track.thumb)
+        await interaction.followup.send(embed=emb)
 
     @app_commands.command(description="Salta il brano corrente")
     async def skip(self, interaction: discord.Interaction):
@@ -299,7 +318,7 @@ class Music(commands.Cog):
         if not cur and not q:
             await interaction.response.send_message("Coda vuota.")
             return
-        embed = discord.Embed(title="🎶 Coda", colour=discord.Colour.blurple())
+        embed = discord.Embed(title="🎶 Coda", colour=MIKU_COLOR)
         if cur:
             embed.add_field(
                 name="▶️ Ora suona",
@@ -327,8 +346,10 @@ class Music(commands.Cog):
         embed = discord.Embed(
             title="🎵 Ora suona",
             description=f"**[{cur.title}]({cur.webpage})**" if cur.webpage else f"**{cur.title}**",
-            colour=discord.Colour.green(),
+            colour=MIKU_COLOR,
         )
+        if cur.thumb:
+            embed.set_thumbnail(url=cur.thumb)
         embed.add_field(name="Durata", value=fmt_dur(cur.duration))
         embed.add_field(name="Richiesto da", value=cur.requester.mention)
         loop_label = {"off": "off", "one": "🔂 brano", "all": "🔁 coda"}[self.loop_modes[gid]]
